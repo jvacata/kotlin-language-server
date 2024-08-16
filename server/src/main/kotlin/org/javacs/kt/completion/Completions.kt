@@ -37,6 +37,7 @@ import org.jetbrains.kotlin.lexer.KtKeywordToken
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.DescriptorUtils
 import org.jetbrains.kotlin.resolve.descriptorUtil.*
+import org.jetbrains.kotlin.resolve.lazy.descriptors.LazyClassDescriptor
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter.Companion
 import org.jetbrains.kotlin.resolve.scopes.HierarchicalScope
@@ -164,7 +165,10 @@ private fun elementCompletionItems(file: CompiledFile, cursor: Int, config: Comp
     val completions = elementCompletions(file, cursor, surroundingElement, isGlobal)
         .applyIf(isGlobal) { filter { declarationIsInfix(it) } }
         .applyIf(surroundingElement.endOffset == cursor) {
-            filter { containsCharactersInOrder(name(it), partial, caseSensitive = false) }
+            map {Pair(it, name(it))}
+                .filter {it.second.isNotEmpty()}
+                .filter { containsCharactersInOrder(it.second, partial, caseSensitive = false) }
+                .map { it.first }
         }
     val sorted = completions.takeIf { partial.length >= MIN_SORT_LENGTH }?.sortedBy { stringDistance(name(it), partial) }
         ?: completions.sortedBy { if (name(it).startsWith(partial)) 0 else 1 }
@@ -518,7 +522,12 @@ private fun equalsIdentifier(identifier: String): (DeclarationDescriptor) -> Boo
 
 private fun name(d: DeclarationDescriptor): String {
     if (d is ConstructorDescriptor)
-        return d.constructedClass.name.identifier
+        if (d is ClassConstructorDescriptor && d.constructedClass.kind == ClassKind.OBJECT && d.constructedClass.visibility == DescriptorVisibilities.PUBLIC)
+            return ""
+        else
+            return d.constructedClass.name.identifier
+    else if (d is LazyClassDescriptor && d.kind == ClassKind.OBJECT && d.visibility == DescriptorVisibilities.PUBLIC)
+        return ""
     else
         return d.name.identifier
 }
